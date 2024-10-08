@@ -1,8 +1,5 @@
 ```php
-use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Framework\Exception\LocalizedException;
-
-class YourClass
+class ProductVariationHandler
 {
     protected $productRepository;
     protected $logger;
@@ -15,55 +12,82 @@ class YourClass
         $this->logger = $logger;
     }
 
-    public function getProducts($productIds)
+    public function processProducts($products)
     {
-        $successProducts = [];
-        $failedProducts = [];
-
-        foreach ($productIds as $productId) {
+        $processedProducts = [];
+        
+        foreach ($products as $product) {
             try {
-                $product = $this->productRepository->getById($productId);
-                $successProducts[] = $product;
-            } catch (NoSuchEntityException $e) {
-                // Product not found
-                $failedProducts[$productId] = "Product not found: " . $e->getMessage();
-                $this->logger->error("Product not found: " . $e->getMessage(), ['productId' => $productId]);
-            } catch (LocalizedException $e) {
-                // Handle Magento specific exceptions
-                $failedProducts[$productId] = "Error loading product: " . $e->getMessage();
-                $this->logger->error("Error loading product: " . $e->getMessage(), ['productId' => $productId]);
-            } catch (\Exception $e) {
-                // Handle any other unexpected exceptions
-                $failedProducts[$productId] = "Unexpected error: " . $e->getMessage();
-                $this->logger->critical("Unexpected error loading product: " . $e->getMessage(), [
-                    'productId' => $productId,
+                // Simulate the array index access similar to your variation code
+                if (!isset($product['attributes']) || !is_array($product['attributes'])) {
+                    throw new \OutOfBoundsException('Product attributes array is not properly defined');
+                }
+
+                $attributes = $product['attributes'];
+                $attributesCount = count($attributes);
+                $filledProduct = [];
+
+                // This will throw an exception if index doesn't exist
+                for ($attributeIndex = $attributesCount; $attributeIndex--;) {
+                    if (!isset($attributes[$attributeIndex])) {
+                        throw new \OutOfBoundsException(
+                            sprintf('Undefined array key %d in attributes array', $attributeIndex)
+                        );
+                    }
+
+                    $currentAttribute = $attributes[$attributeIndex];
+                    
+                    // Checking for array key existence
+                    if (!isset($currentAttribute['id']) || !isset($currentAttribute['values'])) {
+                        throw new \OutOfBoundsException(
+                            'Required keys "id" or "values" missing in attribute array'
+                        );
+                    }
+
+                    // Now safely process the product
+                    $productModel = $this->productRepository->getById($product['product_id']);
+                    $filledProduct[$currentAttribute['id']] = $productModel->getData($currentAttribute['id']);
+                }
+
+                $processedProducts[] = $filledProduct;
+
+            } catch (\OutOfBoundsException $e) {
+                // Log the array index error
+                $this->logger->error('Array index error: ' . $e->getMessage(), [
+                    'product_id' => $product['product_id'] ?? 'unknown',
                     'trace' => $e->getTraceAsString()
                 ]);
+                // You can either continue processing other products or throw the exception
+                continue;
+            } catch (\Exception $e) {
+                $this->logger->critical('Unexpected error: ' . $e->getMessage(), [
+                    'product_id' => $product['product_id'] ?? 'unknown',
+                    'trace' => $e->getTraceAsString()
+                ]);
+                continue;
             }
         }
 
-        return [
-            'success' => $successProducts,
-            'failed' => $failedProducts
-        ];
+        return $processedProducts;
     }
 
-    // Example usage
-    public function executeExample()
+    // Example usage with error simulation
+    public function simulateErrorCase()
     {
-        $productIds = [18305, 18306, 18307]; // Add your product IDs here
-        $result = $this->getProducts($productIds);
+        // This will cause the same type of error as in your original code
+        $problematicProducts = [
+            [
+                'product_id' => 18305,
+                'attributes' => [
+                    // Missing index will cause the error
+                    0 => ['id' => 'attr1', 'values' => ['val1']],
+                    // Index 1 is missing intentionally to simulate the error
+                    2 => ['id' => 'attr3', 'values' => ['val3']]
+                ]
+            ]
+        ];
 
-        // Process successful products
-        foreach ($result['success'] as $product) {
-            // Do something with successfully loaded products
-            echo "Successfully loaded product: " . $product->getSku() . "\n";
-        }
-
-        // Process failed products
-        foreach ($result['failed'] as $productId => $error) {
-            echo "Failed to load product {$productId}: {$error}\n";
-        }
+        return $this->processProducts($problematicProducts);
     }
 }
 ```
